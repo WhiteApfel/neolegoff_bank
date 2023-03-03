@@ -19,7 +19,7 @@ def prepare_response(auth_required: bool = True):
         async def wrapper(self, *args, **kwargs):  # TODO: Add type hint for self
             if auth_required:
                 if not self.core.tokens.is_access_token_alive:
-                    await self.auth.auth_authorize()
+                    await self._neolegoff.auth.authorize()
 
             response: Response | Any = await f(self, *args, **kwargs)
             if not isinstance(response, Response):
