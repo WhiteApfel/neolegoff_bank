@@ -9,6 +9,12 @@ from neolegoff_bank.models.payments.pay_request import (
     PaymentParameters,
     PaymentProviderFields,
 )
+from neolegoff_bank.models.payments.response import (
+    CommissionInfo,
+    ConfirmationInfo,
+    PaymentInfo,
+)
+from neolegoff_bank.modules._helpers import prepare_response
 from neolegoff_bank.modules._module_parent import AioNeolegoffModuleParent
 
 
@@ -31,7 +37,10 @@ class AioNeolegoffPayments(AioNeolegoffModuleParent):
 
         return signature_64
 
-    async def payment_commission(self, pay_parameters: PaymentParameters | dict):
+    @prepare_response()
+    async def payment_commission(
+        self, pay_parameters: PaymentParameters | dict
+    ) -> CommissionInfo:
         if isinstance(pay_parameters, PaymentParameters):
             pay_parameters = pay_parameters.export_commissions_json()
         else:
@@ -47,9 +56,12 @@ class AioNeolegoffPayments(AioNeolegoffModuleParent):
             data=request_data,
         )
 
-        return response.json()
+        return response
 
-    async def pay(self, pay_parameters: PaymentParameters | dict):
+    @prepare_response()
+    async def pay(
+        self, pay_parameters: PaymentParameters | dict
+    ) -> ConfirmationInfo | PaymentInfo:
         if isinstance(pay_parameters, PaymentParameters):
             pay_parameters = pay_parameters.export_pay_tinkoff_json()
         else:
@@ -81,7 +93,33 @@ class AioNeolegoffPayments(AioNeolegoffModuleParent):
 
         response = await self.core.session.send(request)
 
-        return response.json()
+        return response
+
+    @prepare_response
+    async def confirm(
+        self,
+        code: str,
+        confirmation_info: ConfirmationInfo | None = None,
+        operation_ticket: str | None = None,
+        confirmation_type: str | None = None,
+    ) -> PaymentInfo:
+        # TODO add operation_ticket and confirmation_type support
+        request_data = {
+            "confirmationData": json.dumps({confirmation_info.confirmations[0]: code}),
+        }
+
+        params = self.core.app_data_payload | {
+            "initialOperationTicket": confirmation_info.operation_ticket,
+            "initialOperation": confirmation_info.operation_type,
+        }
+
+        response = await self.core.session.post(
+            url="https://api.tinkoff.ru/v1/confirm",
+            params=params,
+            data=request_data,
+        )
+
+        return response
 
     async def find_mobile_provider(self, phone: str):
         params = self.core.app_data_payload | {

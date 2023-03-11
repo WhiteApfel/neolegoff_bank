@@ -1,4 +1,5 @@
-# Neolegoff - Tinkoff Banking API client
+class ConfirmationInfo:
+pass# Neolegoff - Tinkoff Banking API client
 
 ## Предисловие
 
@@ -142,6 +143,7 @@ from decimal import Decimal
 
 from neolegoff_bank import AioNeolegoff
 from neolegoff_bank.models.payments.pay_request import PaymentParametersMobileProvider
+from neolegoff_bank.models.payments.response import ConfirmationInfo
 
 async def main():
     client = AioNeolegoff(app_name="main:whiteapfel")
@@ -151,8 +153,11 @@ async def main():
         amount=Decimal("42.72"),
         phone="9867657635",
     )
-    print(await client.payments.payment_commission(payment))
-    print(await client.payments.pay(payment))
+    commission = await client.payments.payment_commission(payment)
+    payment_result = await client.payments.pay(payment)
+    if isinstance(payment_result, ConfirmationInfo):
+        payment_result = await client.payments.confirm(input("SMS code >>> "), payment_result)
+    print(payment_result)
 
 asyncio.run(main())
 ```
