@@ -1,5 +1,4 @@
-class ConfirmationInfo:
-pass# Neolegoff - Tinkoff Banking API client
+# Neolegoff - Tinkoff Banking API client
 
 ## Предисловие
 
