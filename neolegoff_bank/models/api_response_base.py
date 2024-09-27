@@ -1,12 +1,13 @@
 from typing import Any
 
-from pydantic import BaseModel, Field, root_validator
+from pydantic import model_validator, BaseModel, Field
 
 
 class PayloadModel(BaseModel):
     ...
 
-    @root_validator(pre=True)
+    @model_validator(mode="before")
+    @classmethod
     def unpack_fields(cls, values: dict[str, Any]):
         def fields_iterator():
             return cls.__fields__.items()
@@ -23,7 +24,7 @@ class PayloadModel(BaseModel):
 class BaseApiResponse(BaseModel):
     result_code: str = Field(..., alias="resultCode")
     tracking_id: str = Field(..., alias="trackingId")
-    payload: dict[str, Any] | list[dict[str, Any]] | None
+    payload: dict[str, Any] | list[dict[str, Any]] | None = None
 
     is_business_error: bool = Field(False, alias="isBusinessError")
     error_message: str | None = Field(None, alias="plainMessage")

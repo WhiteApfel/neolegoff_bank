@@ -1,22 +1,31 @@
 from typing import Any
 
 from httpx import Response
+from pydantic import BaseModel
 
 from neolegoff_bank.models.api_response_base import BaseApiResponse
 
 
 class NeolegoffBaseResponseError(BaseException):
+    error_models: list[type[BaseModel]] | None = None
+
     def __init__(
         self,
         response: Response,
         args: list[Any] = None,
         kwargs: dict[str, Any] = None,
         *exc_args,
-        **exc_kwargs
+        **exc_kwargs,
     ):
         self.response: Response = response
         self.args: list[Any] = args
         self.kwargs: dict[str, Any] = kwargs
+
+        super().__init__(self.exception_message)
+
+    @property
+    def exception_message(self):
+        return f"{self.status_code}: {self.response.text}"
 
     @property
     def status_code(self) -> int:

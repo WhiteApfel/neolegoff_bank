@@ -9,7 +9,7 @@ class DeviceAuthorizeResponsePayload(PayloadModel):
     session_id: str = Field(..., alias="sessionid")
     access_level: Literal["CANDIDATE", "CLIENT"] = Field(..., alias="accessLevel")
     prompts: list[str]
-    client_type: Optional[str] = Field(None, alias="clientType")
+    client_type: str | None = Field(None, alias="clientType")
     user_id: str = Field(..., alias="userId")
     sso_id: str = Field(..., alias="ssoId")
     is_client: bool = Field(..., alias="isClient")

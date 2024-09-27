@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, root_validator
+from pydantic import model_validator, BaseModel, Field
 
 
 class PaymentProviderFields(BaseModel):
@@ -28,7 +28,8 @@ class PaymentParameters(BaseModel):
     front_camera: bool = True
     cellular: str = "WIFI"
 
-    @root_validator(pre=True)
+    @model_validator(mode="before")
+    @classmethod
     def pack_fields(cls, values: dict[str, Any]):
         def fields_iterator():
             return cls.__fields__["fields"].type_.__fields__.items()
@@ -82,7 +83,7 @@ class PaymentFieldsC2cOut(PaymentProviderFields):
 class PaymentParametersC2cOut(PaymentParameters):
     account: str
     amount: Decimal
-    bank_card: str | None
+    bank_card: str | None = None
     fields: PaymentFieldsC2cOut = None
     payment_type: str = "Transfer"
     provider: str = "c2c-out"
@@ -101,7 +102,7 @@ class PaymentParametersMobileProvider(PaymentParameters):
     provider: Literal["mts", "tele2", "beeline"] | str
     account: str
     amount: Decimal
-    phone: str | None
+    phone: str | None = None
     fields: PaymentFieldsMobileProvider = None
     payment_type: str = "Payment"
 
@@ -131,3 +132,16 @@ class PaymentParametersSbpQr(PaymentParameters):
     mcc: str
     fields: PaymentFieldsSbpQr = None
     payment_type: str = "Payment"
+
+
+class PaymentFieldsInnerTransfer(PaymentProviderFields):
+    destination: str
+
+
+class PaymentParametersInnerTransfer(PaymentParameters):
+    provider: Literal["transfer-inner"] = "transfer-inner"
+    account: str
+    amount: Decimal
+    destination: str
+    fields: PaymentFieldsInnerTransfer = None
+    payment_type: str = "Transfer"

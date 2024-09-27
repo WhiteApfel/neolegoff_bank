@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, root_validator
+from pydantic import model_validator, BaseModel, Field
 
 from neolegoff_bank.models.api_response_base import PayloadModel
 from neolegoff_bank.models.base import Amount, Location
@@ -10,7 +10,7 @@ from neolegoff_bank.models.base import Amount, Location
 class FieldsValues(BaseModel):
     receiver_bank_name: str | None = Field(None, alias="receiverBankName")
     masked_fio: str | None = Field(None, alias="maskedFio")
-    pointer: str | None
+    pointer: str | None = None
     operation_id: str | None = Field(None, alias="operationId")
     message_id: str | None = Field(None, alias="messageId")
     bank_member_id: str | None = Field(None, alias="bankMemberId")
@@ -19,9 +19,9 @@ class FieldsValues(BaseModel):
     order_id: str | None = Field(None, alias="orderId")
     qr_id: int | None = Field(None, alias="qrId")
     merchant_display_name: str | None = Field(None, alias="merchantDisplayName")
-    mcc: int | None
+    mcc: int | None = None
     merchant_name: str | None = Field(None, alias="merchantName")
-    agreement: str | None
+    agreement: str | None = None
     credit_agreement: str | None = Field(None, alias="creditAgreement")
     requirement_type: int | None = Field(None, alias="requirementType")
     ci_amount: str | None = Field(None, alias="ciAmount")
@@ -29,12 +29,12 @@ class FieldsValues(BaseModel):
     product_specify_type: str | None = Field(None, alias="productSpecifyType")
     joint_id: str | None = Field(None, alias="jointId")
     recipient_type: str | None = Field(None, alias="recipientType")
-    description: str | None
+    description: str | None = None
     transaction_id: str | None = Field(None, alias="transactionId")
     pointer_type: str | None = Field(None, alias="pointerType")
     workflow_type: str | None = Field(None, alias="workflowType")
     pointer_link_id: str | None = Field(None, alias="pointerLinkId")
-    phone: str | None
+    phone: str | None = None
     bank_contract: str | None = Field(None, alias="bankContract")
 
 
@@ -63,7 +63,7 @@ class Category(BaseModel):
 class Brand(BaseModel):
     name: str
     id: str | int
-    link: str | None
+    link: str | None = None
 
 
 class SpendingCategory(BaseModel):
@@ -94,7 +94,8 @@ class OperationMinimal(BaseModel):
 
     raw: dict[str, Any] = Field(exclude=True, repr=False)
 
-    @root_validator(pre=True)
+    @model_validator(mode="before")
+    @classmethod
     def add_raw(cls, values: dict):
         values["raw"] = values.copy()
         operation_ms = values.get("operationTime").get("milliseconds")
@@ -106,21 +107,21 @@ class OperationMinimal(BaseModel):
 
 
 class OperationBase(OperationMinimal):
-    payment: Payment | None
+    payment: Payment | None = None
     authorization_id: str | None = Field(None, alias="authorizationId")
-    operation_payment_type: str | None = Field(alias="operationPaymentType")
+    operation_payment_type: str | None = Field(None, alias="operationPaymentType")
     id_source_type: str = Field(alias="idSourceType")
-    group: str | None
-    subgroup: Category | None
+    group: str | None = None
+    subgroup: Category | None = None
     pos_id: str | None = Field(None, alias="posId")
-    message: str | None
-    sender_details: str | None
+    message: str | None = None
+    sender_details: str | None = None
     card_number: str | None = Field(None, alias="cardNumber")
-    card_id: str | None = Field(alias="card")
-    compensation: str | None
+    card_id: str | None = Field(None, alias="card")
+    compensation: str | None = None
     point_of_sale_id: int | None = Field(None, alias="pointOfSaleId")
-    brand: Brand | None
-    debited_at: datetime | None
+    brand: Brand | None = None
+    debited_at: datetime | None = None
 
     @property
     def is_pay(self):
@@ -143,3 +144,13 @@ class Operations(PayloadModel):
 
     def __len__(self):
         return len(self.operations)
+
+
+class MerchantBrand(PayloadModel):
+    name: str
+    base_text_color: str = Field(..., alias="baseTextColor")
+    logo: str
+    id: str
+    is_rounded_logo: bool = Field(..., alias="roundedLogo")
+    base_color: str = Field(..., alias="baseColor")
+    logo_file: str = Field(..., alias="logoFile")

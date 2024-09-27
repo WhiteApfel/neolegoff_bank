@@ -2,9 +2,11 @@ import base64
 import hashlib
 import hmac
 import json
+from _decimal import Decimal
 
 from httpx import Request
 
+from neolegoff_bank._service.context_logger import get_context_logger
 from neolegoff_bank.models.payments.pay_request import (
     PaymentParameters,
     PaymentProviderFields,
@@ -12,10 +14,12 @@ from neolegoff_bank.models.payments.pay_request import (
 from neolegoff_bank.models.payments.response import (
     CommissionInfo,
     ConfirmationInfo,
-    PaymentInfo,
+    PaymentInfo, SbpMe2meInvoiceResponse,
 )
 from neolegoff_bank.modules._helpers import prepare_response
 from neolegoff_bank.modules._module_parent import AioNeolegoffModuleParent
+
+logger = get_context_logger(__name__)
 
 
 class AioNeolegoffPayments(AioNeolegoffModuleParent):
@@ -34,6 +38,19 @@ class AioNeolegoffPayments(AioNeolegoffModuleParent):
 
         signature = hmac.new(session_id.encode(), to_sign.encode(), hashlib.sha256)
         signature_64 = base64.b64encode(signature.digest()).decode()
+
+        logger.info(
+            f"(_generate_signature) Generate signature {signature_64}",
+            extra={
+                "signature_params": {
+                    "body": body,
+                    "session_id": session_id,
+                    "params": params,
+                    "method": method,
+                    "endpoint": endpoint,
+                }
+            },
+        )
 
         return signature_64
 
@@ -95,7 +112,7 @@ class AioNeolegoffPayments(AioNeolegoffModuleParent):
 
         return response
 
-    @prepare_response
+    @prepare_response()
     async def confirm(
         self,
         code: str,
@@ -133,3 +150,19 @@ class AioNeolegoffPayments(AioNeolegoffModuleParent):
         )
 
         return response.json()
+
+    @prepare_response()
+    async def create_sbp_me2me_invoice(self, account: str, amount: str | Decimal, sbp_bank_source: str, currency: str = "RUB") -> SbpMe2meInvoiceResponse:
+        params = self.core.app_data_payload | {
+            "account": account,
+            "moneyAmount": str((Decimal(amount) if isinstance(amount, str) else amount).quantize(Decimal("0.01"))),
+            "currency": currency,
+            "bankMemberId": sbp_bank_source,
+        }
+
+        response = await self.core.session.post(
+            "https://api.tinkoff.ru/v1/cm/create_sbp_pull_invoice",
+            params=params
+        )
+
+        return response

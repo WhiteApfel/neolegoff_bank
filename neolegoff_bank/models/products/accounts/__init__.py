@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, root_validator, validator
+from pydantic import model_validator, BaseModel, Field, validator
 
 from neolegoff_bank.models.api_response_base import PayloadModel
 from neolegoff_bank.models.base import Amount, Currency
@@ -25,7 +25,8 @@ class AccountBase(BaseModel):
 
     raw: dict[str, Any]
 
-    @root_validator(pre=True)
+    @model_validator(mode="before")
+    @classmethod
     def root_creation(cls, values: dict):
         creation_ms = values.get("creationDate").get("milliseconds")
         values["raw"] = values.copy()

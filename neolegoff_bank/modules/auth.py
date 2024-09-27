@@ -1,12 +1,19 @@
+import base64
 import json
 from typing import Any, Optional
 
+from pydantic import ValidationError
+
+from neolegoff_bank._service.context_logger import get_context_logger, Context
+from neolegoff_bank.exceptions.responses.auth import NeolegoffRefreshTokensError
+from neolegoff_bank.models.api_response_base import BaseApiResponse
 from neolegoff_bank.models.auth import (
     AuthCompleteResponse,
     AuthNextStepResponse,
     AuthNextStepSmsResponse,
     AuthTokens,
     ResponseGetCipherKey,
+    RefreshTokensError,
 )
 from neolegoff_bank.models.auth.device_authorize import DeviceAuthorizeResponse
 from neolegoff_bank.modules import AioNeolegoffCore
@@ -14,13 +21,27 @@ from neolegoff_bank.modules._helpers import prepare_response
 from neolegoff_bank.modules._module_parent import AioNeolegoffModuleParent
 
 
+logger = get_context_logger(__name__)
+
+
 class AioNeolegoffAuth(AioNeolegoffModuleParent):
     def __init__(self, neolegoff: AioNeolegoffCore):
         super().__init__(neolegoff)
 
+    async def register_pullkin(self):
+        if self.core.pullkin_credentials is None:
+            credentials = await self.core.pullkin.register(
+                self.core.fcm_sender_id,
+                self.core.gcm_app_id,
+                "AIzaSyDHbWVEF2r3CvON0D74IfKXtW-7cXWWn8w",
+                "C0E0A4E5480B1E5518B78D41D2FAD1D14E42CCAC",
+                "tcsbank-fee",
+                "com.idamob.tinkoff.android",
+            )
+            self.core.pullkin_credentials = credentials
+
     async def register_push_device(self) -> dict[str, Any]:
         request_data = {
-            "deviceAddress": {"deviceAddress": self.core.device_info.device_address},
             "pushDeviceInfo": {
                 "appPackage": self.core.device_info.app_package,
                 "appVersion": self.core.device_info.app_version,
@@ -34,16 +55,15 @@ class AioNeolegoffAuth(AioNeolegoffModuleParent):
                 "version": self.core.device_info.push_version,
                 "memorySize": self.core.device_info.memory_size,
                 "providerUid": self.core.device_info.provider_uid,
-                "pnsPushAddress": self.core.device_info.pns_push_address,
+                "pnsPushAddress": self.core.pullkin_credentials.gcm.token,
                 "deviceUid": self.core.device_info.device_uid,
-                "installationUid": self.core.device_info.installation_uid,
+                "installationUid": self.core.pullkin_credentials.gcm.installation.fid,
                 "platform": self.core.device_info.platform,
                 "osName": self.core.device_info.os_name,
                 "osVersionMajor": self.core.device_info.os_version_major,
                 "osVersionMinor": self.core.device_info.os_version_minor,
                 "osVersionPatch": self.core.device_info.os_version_patch,
                 "ipAddress": self.core.device_info.ip_address,
-                "macAddress": self.core.device_info.mac_address,
                 "routerIpAddress": self.core.device_info.router_ip_address,
                 "routerMacAddress": self.core.device_info.router_mac_address,
                 "apiLevel": self.core.device_info.api_level,
@@ -56,9 +76,68 @@ class AioNeolegoffAuth(AioNeolegoffModuleParent):
         response = await self.core.session.post(
             url="https://pushserver.mfms.ru/tcsbank/service/device/registerPushDevice",
             json=request_data,
+            headers={"Accept": "application/json, text/plain, */*"},
+        )
+        logger.debug(
+            f"(register_push_device) Response {response.status_code}:"
+            f" {response.content.decode()}"
+        )
+        response_data_register = response.json()
+
+        self.core.app_data.device_address = response_data_register["deviceAddress"][
+            "deviceAddress"
+        ]
+        logger.info(
+            "(register_push_device) Set device address"
+            f" {self.core.app_data.device_address}"
         )
 
-        return response
+        request_data = response_data_register | {"enabled": True}
+
+        response = await self.core.session.post(
+            url="https://pushserver.mfms.ru/tcsbank/service/subscription/status",
+            json=request_data,
+            headers={"Accept": "application/json, text/plain, */*"},
+        )
+
+        response_data_status = response.json()
+        logger.info(f"(register_push_device) Status {response_data_status=}")
+
+        await self.core.mfms_sync("null")
+
+    @prepare_response()
+    async def register_for_push(self) -> BaseApiResponse:
+        security_token = base64.b64encode(
+            json.dumps(
+                {
+                    "version": self.core.device_info.push_version,
+                    "deviceSerialNumber": self.core.device_info.device_serial_number,
+                    "memorySize": self.core.device_info.memory_size,
+                    "deviceModel": self.core.device_info.device_model,
+                    "deviceName": self.core.device_info.device_name,
+                    "locale": self.core.device_info.locale,
+                    "deviceUid": self.core.device_info.device_uid,
+                    "pushAddress": self.core.pullkin_credentials.gcm.token,
+                    "deviceAddress": self.core.app_data.device_address,
+                    "osName": self.core.device_info.os_name,
+                    "osVersion": self.core.device_info.os_version_major,
+                    "appPackage": self.core.device_info.app_package,
+                    "appVersion": self.core.device_info.app_version,
+                    "ipAddress": self.core.device_info.ip_address,
+                    "routerIpAddress": self.core.device_info.router_ip_address,
+                    "routerMacAddress": self.core.device_info.router_mac_address,
+                    "timeZoneUTCOffset": "10800000ms",
+                }
+            ).encode()
+        ).decode()
+
+        return await self.core.session.get(
+            url="https://api.tinkoff.ru/v1/register_for_push_notification",
+            params=self.core.app_data_payload
+            | {
+                "securityToken": security_token,
+            },
+        )
 
     @prepare_response(auth_required=False)
     async def auth_entry(self) -> AuthNextStepResponse:
@@ -115,6 +194,7 @@ class AioNeolegoffAuth(AioNeolegoffModuleParent):
             data=request_data,
         )
 
+    @prepare_response(auth_required=False)
     async def auth_complete(
         self, cid: str
     ) -> AuthCompleteResponse | AuthNextStepResponse:
@@ -132,23 +212,29 @@ class AioNeolegoffAuth(AioNeolegoffModuleParent):
                 raise ValueError(f"Error {to_return.error}: {to_return.error_message}")
             return AuthNextStepResponse(**response_dict)
 
-        self.core.cookies = response.cookies
+        self.core.cookies = dict(response.cookies)
 
         return AuthCompleteResponse(**response_dict)
 
-    @prepare_response(auth_required=False)
-    async def auth_token(self, code: Optional[str] = None) -> AuthTokens:
+    @prepare_response(
+        auth_required=False, specific_exceptions=[NeolegoffRefreshTokensError]
+    )
+    async def auth_token(self, code: str | None = None) -> AuthTokens:
         request_data = {
             "redirect_uri": "mobile://",
             "client_version": self.core.device_info.version,
             "vendor": "tinkoff_android",
         }
         if code is not None:
+            logger.info("(auth_token) Auth by code")
             request_data["grant_type"] = "authorization_code"
             request_data["code"] = code
             if "refresh_token" in request_data:
                 del request_data["refresh_token"]
         elif self.core.tokens is not None:
+            logger.info(
+                f"(auth_token) Auth by refresh_token {self.core.tokens.refresh_token}"
+            )
             request_data.update(
                 {
                     "grant_type": "refresh_token",
@@ -195,13 +281,21 @@ class AioNeolegoffAuth(AioNeolegoffModuleParent):
             url="https://id.tinkoff.ru/auth/token",
             data=request_data,
             headers={"Authorization": "Basic dGlua29mZi1tYi1hcHA6"},
+            timeout=11,
         )
-        self.core.tokens = AuthTokens(**response.json())
-        self.core.cookies = response.cookies
 
-        self.core.session.headers.update(
-            {"Authorization": f"Bearer {self.core.tokens.access_token}"}
-        )
+        response_data = response.json()
+        try:
+            print(response_data)
+            self.core.tokens = AuthTokens(**response_data)
+            self.core.cookies = response.cookies
+
+            self.core.session.headers.update(
+                {"Authorization": f"Bearer {self.core.tokens.access_token}"}
+            )
+            logger.info("Tokens updated")
+        except ValidationError:
+            logger.exception("Error refresh token response")
 
         return response
 
@@ -263,10 +357,14 @@ class AioNeolegoffAuth(AioNeolegoffModuleParent):
                 }
             ),
         }
-        return await self.core.session.post(
+        response = await self.core.session.post(
             url="https://id.tinkoff.ru/auth/authorize",
             data=request_data,
         )
+
+        self.core.cookies = response.cookies
+
+        return response
 
     @prepare_response(auth_required=False)
     async def auth_password(self, password: str, cid: str) -> AuthNextStepResponse:
@@ -325,28 +423,50 @@ class AioNeolegoffAuth(AioNeolegoffModuleParent):
         :param card_number:
         :return:
         """
+        logger.info(
+            "(login_pipeline) Start login pipeline:"
+            f" {self._neolegoff.is_login_required=}"
+        )
         if self._neolegoff.is_login_required:
-            push_register_result = await self.register_push_device()
+            await self.register_pullkin()
+
+            # push_register_result = await self.register_push_device()
             response = await self.auth_entry()
+
+            logger.debug(f"(login_pipeline) Start first stage. Next step {response}")
             while isinstance(response, AuthNextStepResponse):
+                logger.debug(f"(login_pipeline) First stage step {response}")
                 if response.step == "entry":
                     response = await self.auth_phone(phone_number, response.cid)
                 elif response.step == "otp":
                     code = yield
                     yield
-                    print(code)
                     response = await self.auth_sms_otp(
                         code, response.token, response.cid
                     )
                 elif response.step == "complete":
                     response = await self.auth_complete(response.cid)
+                else:
+                    logger.error(f"(login_pipeline) Unknown next step {response}")
+
+            logger.debug(f"(login_pipeline) Finish first pipeline with {response}")
+
             if isinstance(response, AuthCompleteResponse):
+                logger.debug(
+                    "(login_pipeline) Start second stage. Finish first pipeline with"
+                    f" {response}"
+                )
                 await self.auth_token(response.code)
                 await self.get_device_cipher_key()
                 await self.auth_device()
+                logger.debug(f"(login_pipeline) Finish second pipeline")
+            else:
+                logger.error(f"(login_pipeline) Failed first stage with {response}")
 
             response = await self.auth_authorize()
+            logger.debug(f"(login_pipeline) Start third stage. Next step {response}")
             while isinstance(response, AuthNextStepResponse):
+                logger.debug(f"(login_pipeline) Third stage step {response}")
                 if response.step == "password":
                     response = await self.auth_password(password, response.cid)
                 elif response.step == "fingerprint":
@@ -358,12 +478,23 @@ class AioNeolegoffAuth(AioNeolegoffModuleParent):
                 elif response.step == "complete":
                     response = await self.auth_complete(response.cid)
                 elif response.step == "entry":
-                    continue
+                    break
+
             if isinstance(response, AuthCompleteResponse):
+                logger.debug(
+                    "(login_pipeline) Start fourth pipeline. Finish third pipeline"
+                    f" with {response}"
+                )
                 await self.auth_token(response.code)
                 await self.get_device_cipher_key()
+                logger.debug(f"(login_pipeline) Finish fourth pipeline")
+            else:
+                logger.error(f"(login_pipeline) Failed third stage with {response}")
 
+            logger.debug(f"(login_pipeline) Finish fourth pipeline")
             await self.auth_device()
+
+            await self.register_for_push()
         return
 
     async def authorize(self):

@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Any
 
-from pydantic import Field, root_validator
+from pydantic import model_validator, Field
 
 from neolegoff_bank.models import Amount
 from neolegoff_bank.models.api_response_base import BaseApiResponse, PayloadModel
@@ -33,7 +33,8 @@ class PaymentInfo(PayloadModel):
     fields: dict = Field(..., alias="extraFields")
     # commission_info_helper: dict = Field(..., alias="commissionInfo")
 
-    @root_validator(pre=True)
+    @model_validator(mode="before")
+    @classmethod
     def normalize_info(cls, values):
         return values | values.get("payload", {}).get("commissionInfo", {})
 
@@ -44,3 +45,9 @@ class ConfirmationInfo(BaseApiResponse):
     operation_type: str = Field(..., alias="initialOperation")
     confirmations: list[str]
     confirmation_data: dict = Field(..., alias="confirmationData")
+
+
+class SbpMe2meInvoiceResponse(PayloadModel):
+    group: str
+    invoices: list[str]
+    status: int

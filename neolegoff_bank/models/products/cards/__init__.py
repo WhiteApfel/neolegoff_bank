@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, root_validator
+from pydantic import model_validator, BaseModel, Field
 
 from neolegoff_bank.models.base import Amount
 
@@ -22,7 +22,8 @@ class CardBase(BaseModel):
 
     _raw: dict[str, Any]
 
-    @root_validator(pre=True)
+    @model_validator(mode="before")
+    @classmethod
     def root_base(cls, values: dict):
         values["_raw"] = values.copy()
         if "expiration" in values:

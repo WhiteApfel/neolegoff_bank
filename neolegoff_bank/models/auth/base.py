@@ -8,10 +8,10 @@ class AuthNextStepResponse(BaseModel):
     action: str
     step: str
     cid: str
-    collect_fingerprint: Optional[bool] = Field(False, alias="collectFingerprint")
-    can_skip: Optional[bool] = Field(False, alias="canSkip")
-    error: Optional[str]
-    error_message: Optional[str]
+    collect_fingerprint: bool | None = Field(False, alias="collectFingerprint")
+    can_skip: bool | None = Field(False, alias="canSkip")
+    error: str | None = None
+    error_message: str | None = None
 
     @property
     def is_error(self):
@@ -47,3 +47,9 @@ class AuthTokens(BaseModel):
 class ResponseGetCipherKey(BaseModel):
     result: str
     success: bool
+
+
+class RefreshTokensError(BaseModel):
+    error: str
+    need_new_auth: bool
+    attempts_left: int

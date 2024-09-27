@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timedelta
 
-from neolegoff_bank.models.operations import Operations
+from neolegoff_bank.models.operations import Operations, MerchantBrand
 from neolegoff_bank.modules._helpers import prepare_response
 from neolegoff_bank.modules._module_parent import AioNeolegoffModuleParent
 
@@ -56,6 +56,23 @@ class AioNeolegoffOperations(AioNeolegoffModuleParent):
                 "end": int(end.timestamp() * 1000),
             }
             | ({"account": account_id} if account_id is not None else {}),
+        )
+
+        return response
+
+    @prepare_response()
+    async def brand_by_merchant(
+        self, name: str, mcc: str, city: str, country: str
+    ) -> MerchantBrand:
+        response = await self.core.session.get(
+            url="https://api.tinkoff.ru/v1/brand_by_merchant",
+            params=self.core.app_data_payload
+            | {
+                "merchant_name_fragment": name,
+                "mcc": mcc,
+                "merchant_city_fragment": city,
+                "merchant_country_fragment": country,
+            },
         )
 
         return response

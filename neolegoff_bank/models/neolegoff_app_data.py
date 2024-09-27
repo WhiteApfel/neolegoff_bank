@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import string
@@ -12,67 +13,77 @@ from typing import Optional
 
 from appdirs import AppDirs
 from Cryptodome.Cipher import AES
+from pullkin.models import (
+    AppCredentials,
+    AppCredentialsKeys,
+    AppCredentialsFcm,
+    AppCredentialsGcm,
+)
 from pydantic import BaseModel, Field
 from randmac import RandMac
 
+from neolegoff_bank._service.context_logger import Context, get_context_logger
 from neolegoff_bank.models.auth import AuthTokens
 from neolegoff_bank.models.auth.device_authorize import DeviceAuthorizeResponsePayload
 
 
+logger = get_context_logger(__name__)
+
+
 class NeolegoffDeviceInfo(BaseModel):
     # May need an increase
-    app_version = "6.12.1"
-    push_version = "2.0.6"
-    version = "3.1.2"
+    app_version: str = "6.23.1"
+    push_version: str = "2.0.6"
+    version: str = "3.1.2"
 
     # Package info
-    app_package = "com.idamob.tinkoff.android"
+    app_package: str = "com.idamob.tinkoff.android"
 
     # Unique device IDs
-    appsflyer_uid = "1665453203890-5636190662334170797"
-    device_address = "gcmorix6v50f8y832o7noupcolouhkqjqb"
-    device_serial_number = "36abb434"
-    device_uid = "8b102654eb77ddcc"
-    installation_uid = "34snDzQ2mYDRnfrenBai"
-    old_device_id = "8b102654eb77ddcc"
-    pns_push_address = (
+    appsflyer_uid: str = "1665453203890-5636190662334170797"
+    device_address: str = "gcmorix6v50f8y832o7noupcolouhkqjqb"
+    device_serial_number: str = "36abb434"
+    device_uid: str = "8b102654eb77ddcc"
+    installation_uid: str = "34snDzQ2mYDRnfrenBai"
+    old_device_id: str = "8b102654eb77ddcc"
+    pns_push_address: str = (
         "c-34snDzQ2mYDRnfrenBai:APA91bExVQZHfen2Ap3f0PBJxi_gNy-"
         "QNA90ChdHbPhJOFqnI4N3alXFOJHhyNsC6dnmkiuvAfpbfdjJLNmOC"
         "2UQUvCesNzRrBZSpp8fQt1HJApQ3MV5ptPIc0EzJcApYj61gp4U68k9"
     )
-    provider_uid = "PH5AckgzOkJrMVhoRGRrPkBCbDdeKUFuRVooRElkZCtCay5Qfj4K"
+    provider_uid: str = "PH5AckgzOkJrMVhoRGRrPkBCbDdeKUFuRVooRElkZCtCay5Qfj4K"
 
     # Device info
-    device_model = "WhiteApfel Neolegoff"
-    device_name = "wafelka"
-    os_name = "Android sm6150"
+    device_model: str = "WhiteApfel Neolegoff"
+    device_name: str = "wafelka"
+    os_name: str = "Android sm6150"
 
-    locale = "ru"
-    time_zone_utc_offset_second = "10800"
+    locale: str = "ru"
+    time_zone_utc_offset_second: str = "10800"
 
-    memory_size = 1024
+    memory_size: int = 1024
 
-    screen_dpi = 404
-    screen_height = 2297
-    screen_width = 1080
+    screen_dpi: int = 404
+    screen_height: int = 2297
+    screen_width: int = 1080
 
     # Android info
-    api_level = 31
-    can_show_push_notification = True
-    os_version_major = 12
-    os_version_minor = -1
-    os_version_patch = -1
-    platform = 1  # 1 = Android
+    api_level: int = 31
+    can_show_push_notification: bool = True
+    os_version_major: int = 12
+    os_version_minor: int = -1
+    os_version_patch: int = -1
+    platform: int = 1  # 1 = Android
 
     # Network info
-    ip_address = "fe80::3464:87ff:fece:1e20%dummy0"
-    mac_address = "36:64:87:CE:1E:20"
-    router_ip_address = "192.168.0.100"
-    router_mac_address = "02:00:00:00:00:00"
+    ip_address: str = "fe80::3464:87ff:fece:1e20%dummy0"
+    mac_address: str = "36:64:87:CE:1E:20"
+    router_ip_address: str = "192.168.0.100"
+    router_mac_address: str = "02:00:00:00:00:00"
 
     # Calculated
-    user_agent = f"{device_model}/android: {os_version_major}/TCSMB/{app_version}"
-    device_fingerprint = (
+    user_agent: str = f"{device_model}/android: {os_version_major}/TCSMB/{app_version}"
+    device_fingerprint: str = (
         f"{user_agent}###{screen_width}x{screen_height}x32###180###false###false###"
     )
 
@@ -152,13 +163,25 @@ class NeolegoffDeviceInfo(BaseModel):
         )
 
 
+class PullkinCredentialsHelper(BaseModel):
+    gcm: AppCredentialsGcm
+    fcm: AppCredentialsFcm
+    keys: AppCredentialsKeys
+
+    def to_app_credentials(self):
+        return AppCredentials(gcm=self.gcm, fcm=self.fcm, keys=self.keys)
+
+
 class NeolegoffAppData(BaseModel):
     app_name: str = Field("main:whiteapfel", exclude=True)
-    cookies: dict = Field(default_factory=dict)
-    cypher_key: Optional[str]
-    device_info: Optional[NeolegoffDeviceInfo]
-    session_info: Optional[DeviceAuthorizeResponsePayload]
-    tokens: Optional[AuthTokens]
+    cookies: dict = {}
+    cypher_key: str | None = None
+    device_info: NeolegoffDeviceInfo | None = None
+    session_info: DeviceAuthorizeResponsePayload | None = None
+    tokens: AuthTokens | None = None
+    pullkin_credentials: PullkinCredentialsHelper | None = None
+    device_address: str | None = None
+    next_sync_token: str | None = None
 
 
 class NeolegoffAppDataManagerAbstract(ABC):
@@ -183,11 +206,20 @@ class NeolegoffAppDataManagerAbstract(ABC):
     def save_data(self, **kwargs):
         ...
 
+    def load_pullkin_credentials(self, **kwargs):
+        ...
+
+    def save_pullkin_credentials(self, **kwargs):
+        ...
+
 
 class NeolegoffAppDataManagerFileSystem(NeolegoffAppDataManagerAbstract):
-    def __init__(self, app_data: NeolegoffAppData = None, **kwargs):
+    def __init__(
+        self, app_data: NeolegoffAppData = None, app_name="main:whiteapfel", **kwargs
+    ):
         super().__init__()
         self.data: NeolegoffAppData = app_data
+        self.app_name = app_name
 
         self.salt = md5(b"whiteapfel").hexdigest().encode()
         self.key = hashlib.scrypt(
@@ -200,13 +232,12 @@ class NeolegoffAppDataManagerFileSystem(NeolegoffAppDataManagerAbstract):
         )
 
         self.last_load_datetime: datetime = None
+        self.lock = asyncio.Lock()
 
     @property
     def data_dir_path(self) -> Path:
         neolegoff_dir = AppDirs("neolegoff", "whiteapfel")
-        return Path(
-            f"{neolegoff_dir.user_data_dir}/{self.data.app_name.rsplit(':', 1)[0]}"
-        )
+        return Path(f"{neolegoff_dir.user_data_dir}/{self.app_name.rsplit(':', 1)[0]}")
 
     @property
     def data_file_path(self) -> Path:
@@ -233,13 +264,43 @@ class NeolegoffAppDataManagerFileSystem(NeolegoffAppDataManagerAbstract):
             encrypted_string = b64decode(encoded_b64_string)
             tag, ciphertext = encrypted_string[:16], encrypted_string[16:]
             json_string = self.get_cipher().decrypt_and_verify(ciphertext, tag)
+            logger.debug(
+                f"(load_data) Load app data", extra={"loaded_json": json_string}
+            )
             data = json.loads(json_string)
             self.data = NeolegoffAppData(**data)
+            if self.data.pullkin_credentials is not None:
+                self.data.pullkin_credentials = (
+                    self.data.pullkin_credentials.to_app_credentials()
+                )
             self.last_load_datetime = self.file_last_modified_datetime
+        Context.set(
+            Context.get()
+            | {
+                "tokens": (
+                    self.data.tokens.dict() if self.data.tokens else self.data.tokens
+                )
+            }
+        )
+        Context.set(
+            Context.get()
+            | {
+                "session_info": (
+                    self.data.session_info.dict()
+                    if self.data.session_info
+                    else self.data.session_info
+                )
+            }
+        )
+        Context.set(Context.get() | {"cookies": self.data.cookies})
         return self
 
     def save_data(self, **kwargs):
-        json_string = self.data.json(by_alias=True)
+        print([i for i in self.data._iter()])
+        json_string = json.dumps(self.data.model_dump(mode="json", by_alias=True))
+        logger.info(
+            f"(save_data) Save app data", extra={"saved_data": json.loads(json_string)}
+        )
         ciphertext, tag = self.get_cipher().encrypt_and_digest(json_string.encode())
         encrypted_string = tag + ciphertext
         encoded_b64_string = b64encode(encrypted_string).decode()
@@ -254,10 +315,17 @@ class NeolegoffAppDataManagerFileSystem(NeolegoffAppDataManagerAbstract):
         self.data.device_info = device_info
         self.save_data()
 
-    def update_cookies(self, cookies: dict):
-        self.data.cookies.update(cookies)
+    def update_cookies(self, cookies: dict | None):
+        if cookies is not None:
+            self.data.cookies.update(cookies)
+        else:
+            self.data.cookies = {}
         self.save_data()
 
     def update_session_info(self, session_info: DeviceAuthorizeResponsePayload):
         self.data.session_info = session_info
+        self.save_data()
+
+    def update_pullkin_credentials(self, pullkin_credentials: AppCredentials):
+        self.data.pullkin_credentials = pullkin_credentials
         self.save_data()
